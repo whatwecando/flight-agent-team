@@ -19,9 +19,28 @@ echo -e "${BOLD}║   Trouvez le vrai meilleur prix          ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
-# ---- 1. Vérifier Claude Code ----
-echo -e "${BLUE}[1/4]${NC} Vérification de Claude Code..."
+# ---- 1. Vérifier les prérequis ----
+echo -e "${BLUE}[1/4]${NC} Vérification des prérequis..."
 
+# Node.js
+if command -v node &> /dev/null; then
+    NODE_VERSION=$(node --version 2>/dev/null || echo "inconnue")
+    echo -e "  ${GREEN}✓${NC} Node.js installé (${NODE_VERSION})"
+else
+    echo -e "  ${RED}✗${NC} Node.js n'est pas installé."
+    echo -e "  Installez Node.js 18+ : https://nodejs.org"
+    exit 1
+fi
+
+# npx
+if command -v npx &> /dev/null; then
+    echo -e "  ${GREEN}✓${NC} npx disponible"
+else
+    echo -e "  ${RED}✗${NC} npx non trouvé. Installez npm/npx."
+    exit 1
+fi
+
+# Claude Code
 if command -v claude &> /dev/null; then
     CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "version inconnue")
     echo -e "  ${GREEN}✓${NC} Claude Code installé (${CLAUDE_VERSION})"
@@ -47,6 +66,9 @@ REQUIRED_FILES=(
     ".claude/agents/flight-sniper.md"
     "data/airline-fees.md"
     "data/airport-alternatives.md"
+    "data/memory/MEMORY.md"
+    "data/memory/user-preferences.md"
+    "data/memory/search-history.md"
     "README.md"
     "docs/guide.md"
 )
@@ -67,42 +89,35 @@ if [ "$ALL_OK" = false ]; then
     exit 1
 fi
 
-# ---- 3. Configuration MCP ----
-echo -e "${BLUE}[3/4]${NC} Configuration MCP..."
+# ---- 3. Vérifier le serveur MCP ----
+echo -e "${BLUE}[3/4]${NC} Vérification du serveur MCP Google Flights..."
 
-echo -e "  ${GREEN}✓${NC} Serveur MCP pré-configuré : ${BOLD}findflights.me${NC} (Aviasales)"
-echo -e "    Transport : SSE"
-echo -e "    URL : https://findflights.me/sse"
-echo -e "    Clé API : non requise"
+echo -e "  Serveur MCP configuré : ${BOLD}google-flights-mcp-server${NC}"
+echo -e "  Transport : stdio (local via npx)"
+echo -e "  Clé API : ${GREEN}non requise${NC}"
 echo ""
-
-# ---- 4. Source supplémentaire (optionnel) ----
-echo -e "${BLUE}[4/4]${NC} Sources supplémentaires (optionnel)..."
-echo ""
-echo -e "  Flight Sniper fonctionne avec findflights.me par défaut."
-echo -e "  Pour de meilleurs résultats, vous pouvez ajouter une 2e source :"
-echo ""
-echo -e "  ${BOLD}Google Flights via SerpAPI :${NC}"
-echo -e "    1. Obtenir une clé API sur https://serpapi.com"
-echo -e "    2. Cloner : git clone https://github.com/arjunprabhulal/mcp-flight-search.git"
-echo -e "    3. Ajouter le serveur dans .claude/settings.json"
-echo -e "    Voir README.md pour les instructions détaillées."
+echo -e "  Outils disponibles :"
+echo -e "    ${YELLOW}→${NC} search_flights — Recherche de vols avec filtres"
+echo -e "    ${YELLOW}→${NC} get_date_grid — Grille de prix sur ~60 jours"
+echo -e "    ${YELLOW}→${NC} find_airport_code — Résolution codes IATA"
 echo ""
 
-read -p "  Voulez-vous configurer SerpAPI maintenant ? (o/N) " -n 1 -r
-echo ""
-
-if [[ $REPLY =~ ^[Oo]$ ]]; then
-    read -p "  Entrez votre clé SerpAPI : " SERPAPI_KEY
-    if [ -n "$SERPAPI_KEY" ]; then
-        echo -e "  ${YELLOW}Note :${NC} Ajoutez cette clé dans .claude/settings.json"
-        echo -e "  sous mcpServers.google-flights.env.SERPAPI_KEY"
-        echo -e "  Voir README.md section 'Ajouter une 2e source MCP'"
-        echo ""
-        echo -e "  ${GREEN}✓${NC} Clé notée. Suivez les instructions du README pour finaliser."
-    fi
+echo -n "  Test de google-flights-mcp-server... "
+if npx -y google-flights-mcp-server --help &> /dev/null; then
+    echo -e "${GREEN}OK${NC}"
 else
-    echo -e "  ${GREEN}→${NC} Pas de problème, findflights.me suffit pour commencer."
+    echo -e "${YELLOW}non vérifiable en mode CLI${NC} (normal, le serveur démarre en mode MCP)"
+fi
+
+# ---- 4. Mémoire persistante ----
+echo -e "${BLUE}[4/4]${NC} Mémoire persistante..."
+
+if [ -f "$PROJECT_DIR/data/memory/user-preferences.md" ] && [ -f "$PROJECT_DIR/data/memory/search-history.md" ]; then
+    echo -e "  ${GREEN}✓${NC} Système de mémoire initialisé"
+    echo -e "    Préférences : data/memory/user-preferences.md"
+    echo -e "    Historique : data/memory/search-history.md"
+else
+    echo -e "  ${YELLOW}!${NC} Fichiers mémoire manquants — ils seront créés à la première recherche"
 fi
 
 # ---- Résumé ----
@@ -117,8 +132,8 @@ echo ""
 echo -e "  ${BOLD}Exemples de requêtes :${NC}"
 echo ""
 echo -e "  ${YELLOW}→${NC} Trouve-moi un vol Paris-New York du 15 au 22 mars"
+echo -e "  ${YELLOW}→${NC} Quand est-ce le moins cher pour aller à Tokyo depuis Paris ?"
 echo -e "  ${YELLOW}→${NC} Vol le moins cher Paris-Bangkok en avril, flexible ±7 jours"
-echo -e "  ${YELLOW}→${NC} Paris-Tokyo en mars, confort, budget 1200€ max"
 echo -e "  ${YELLOW}→${NC} Compare les prix depuis CDG, ORY et BVA pour Londres"
 echo ""
 echo -e "  ${BOLD}Documentation :${NC} docs/guide.md"

@@ -2,7 +2,7 @@
 
 **Trouvez le vrai meilleur prix, pas le prix d'appel.**
 
-Flight Sniper est un système de recherche de vols basé sur Claude Code qui utilise une architecture innovante de **snipe parallèle** pour explorer plusieurs angles de recherche simultanément et calculer le **Coût Total Réel** de chaque option (prix affiché + bagages + frais cachés + transport aéroport).
+Flight Sniper est un système de recherche de vols basé sur Claude Code qui utilise une architecture **Scan & Snipe** : il scanne d'abord la grille de prix sur ~60 jours pour identifier les dates optimales, puis lance des recherches parallèles ciblées et calcule le **Coût Total Réel** (prix + bagages + frais cachés + transport aéroport).
 
 ```
  "Paris → Tokyo, 15-22 mars"
@@ -10,17 +10,18 @@ Flight Sniper est un système de recherche de vols basé sur Claude Code qui uti
      CLAUDE.md (orchestrateur)
           │
           ├── 1. Comprendre les critères
-          ├── 2. Élargir le périmètre (dates flex, aéroports alt)
+          │
+          ├── 2. Scanner — grille de prix ~60 jours
+          │      "le mardi 12 mars est 170€ moins cher"
           │
           ├── 3. Snipe parallèle
-          │      ├──► Sniper #1 : CDG→NRT dates exactes
-          │      ├──► Sniper #2 : CDG→HND dates ±3j
-          │      ├──► Sniper #3 : ORY→NRT mardi/mercredi
-          │      └──► Sniper #4 : split aller/retour
+          │      ├──► Sniper #1 : dates exactes
+          │      ├──► Sniper #2 : dates optimales du scan
+          │      └──► Sniper #3 : aéroport alternatif
           │             (en parallèle)
           │
           ├── 4. Analyser — Coût Total Réel
-          │      prix + bagages + siège + transport + frais CB
+          │      prix + bagages + siège + transport + frais
           │
           └── 5. Recommander — TOP 5 + pièges détectés
 ```
@@ -29,11 +30,12 @@ Flight Sniper est un système de recherche de vols basé sur Claude Code qui uti
 
 | Approche classique | Flight Sniper |
 |-------------------|---------------|
-| 1 recherche, 1 résultat | N recherches en parallèle, N angles différents |
+| 1 recherche, 1 résultat | Scan de prix sur 60 jours + recherches parallèles |
 | Prix affiché = prix final | **Coût Total Réel** = prix + tous les frais cachés |
-| Pas de contexte sur les compagnies | Base de connaissances des frais par compagnie |
+| Pas de contexte compagnies | Base de connaissances des frais par compagnie |
 | Aéroport unique | Aéroports alternatifs avec coût de transport |
-| Pipeline séquentiel (recherche → comparaison → optimisation) | Un seul agent sniper × N instances parallèles |
+| Pas de mémoire | **Préférences et historique persistants** entre sessions |
+| Suggestions de sites externes | **Recherche directe via MCP** — jamais de redirection |
 
 ---
 
@@ -41,6 +43,7 @@ Flight Sniper est un système de recherche de vols basé sur Claude Code qui uti
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installé
 - Abonnement Claude (Pro ou Team)
+- Node.js 18+
 
 ## Installation
 
@@ -55,7 +58,7 @@ bash scripts/setup.sh
 claude
 ```
 
-C'est tout. Le serveur MCP `findflights.me` est pré-configuré et ne nécessite pas de clé API.
+Aucune clé API requise. Le serveur MCP `google-flights-mcp-server` s'installe automatiquement via npx au premier lancement.
 
 ---
 
@@ -63,14 +66,18 @@ C'est tout. Le serveur MCP `findflights.me` est pré-configuré et ne nécessite
 
 ```
 flight-agent-team/
-├── CLAUDE.md                    ← Cerveau : workflow, règles métier, orchestration
+├── CLAUDE.md                    ← Cerveau : workflow Scan & Snipe, règles, mémoire
 ├── .claude/
-│   ├── settings.json            ← Serveur MCP + permissions
+│   ├── settings.json            ← Serveur MCP Google Flights (npx, pas de clé API)
 │   └── agents/
 │       └── flight-sniper.md     ← Agent de recherche (lancé N fois en parallèle)
 ├── data/
 │   ├── airline-fees.md          ← Frais cachés par type de compagnie
-│   └── airport-alternatives.md  ← Aéroports alternatifs + coût transport
+│   ├── airport-alternatives.md  ← Aéroports alternatifs + coût transport
+│   └── memory/
+│       ├── MEMORY.md            ← Index de la mémoire
+│       ├── user-preferences.md  ← Préférences persistantes
+│       └── search-history.md    ← Historique des recherches et prix
 ├── docs/
 │   └── guide.md                 ← Guide utilisateur détaillé
 └── scripts/
@@ -85,6 +92,12 @@ flight-agent-team/
 ```
 Trouve-moi un vol Paris-New York du 15 au 22 mars
 ```
+
+### Trouver les dates les moins chères
+```
+Quand est-ce le moins cher pour aller à Tokyo depuis Paris en mars ?
+```
+> Flight Sniper scanne la grille de prix sur ~60 jours et vous montre les dates optimales.
 
 ### Budget serré
 ```
@@ -101,50 +114,68 @@ Paris-Tokyo en mars, je veux du confort, budget 1200€ max, vol direct si possi
 Paris → Bangkok → Tokyo → Paris en avril, 3 semaines au total
 ```
 
-### Dernière minute
-```
-Il me faut un vol pour Lisbonne ce weekend, le moins cher possible
-```
-
 ---
 
-## Ajouter une 2e source MCP (Google Flights)
+## Serveur MCP
 
-Le projet est pré-configuré avec `findflights.me` (Aviasales). Pour ajouter Google Flights comme 2e source :
+Flight Sniper utilise **google-flights-mcp-server** — un serveur MCP qui interroge Google Flights directement (pas de scraping, protocole protobuf).
 
-### Option A — Google Flights via SerpAPI
+**Outils disponibles :**
 
-1. Cloner le serveur MCP : `git clone https://github.com/arjunprabhulal/mcp-flight-search.git`
-2. Obtenir une clé API sur [serpapi.com](https://serpapi.com) (50 recherches gratuites/mois)
-3. Ajouter dans `.claude/settings.json` :
+| Outil | Description |
+|-------|-------------|
+| `search_flights` | Recherche de vols avec filtres (classe, escales, tri, pagination) |
+| `get_date_grid` | Grille de prix sur ~60 jours — trouve les dates les moins chères |
+| `find_airport_code` | Résolution de noms de villes/aéroports en codes IATA |
 
+**Configuration** (déjà pré-configurée dans `.claude/settings.json`) :
 ```json
 {
   "mcpServers": {
-    "flights-mcp": {
-      "type": "sse",
-      "url": "https://findflights.me/sse"
-    },
     "google-flights": {
-      "command": "python",
-      "args": ["-m", "mcp_flight_search.server"],
-      "cwd": "/chemin/vers/mcp-flight-search",
-      "env": {
-        "SERPAPI_KEY": "votre-clé-ici"
-      }
+      "command": "npx",
+      "args": ["-y", "google-flights-mcp-server"]
     }
   }
 }
 ```
 
-4. Ajouter les permissions correspondantes dans `permissions.allow`
-5. Mettre à jour `flight-sniper.md` pour utiliser les deux sources
+### Ajouter une source MCP supplémentaire
 
-### Option B — Amadeus API
+Pour de meilleurs résultats, vous pouvez ajouter une 2e source dans `.claude/settings.json` :
 
-1. Créer un compte sur [developers.amadeus.com](https://developers.amadeus.com)
-2. Obtenir les clés API (environnement test gratuit)
-3. Utiliser un serveur MCP Amadeus compatible
+**Aviasales (findflights.me) — quand le serveur est disponible :**
+```json
+{
+  "mcpServers": {
+    "google-flights": {
+      "command": "npx",
+      "args": ["-y", "google-flights-mcp-server"]
+    },
+    "flights-mcp": {
+      "type": "sse",
+      "url": "https://findflights.me/sse"
+    }
+  }
+}
+```
+
+---
+
+## Mémoire persistante
+
+Flight Sniper se souvient de vos préférences et de vos recherches passées entre les sessions.
+
+**Préférences** (`data/memory/user-preferences.md`) :
+- Aéroports de départ habituels
+- Besoins en bagages
+- Préférences de confort et budget
+
+**Historique** (`data/memory/search-history.md`) :
+- Routes déjà recherchées avec prix trouvés
+- Permet de comparer l'évolution des prix dans le temps
+
+Ces fichiers sont mis à jour automatiquement après chaque recherche.
 
 ---
 
@@ -158,8 +189,7 @@ Le projet est pré-configuré avec `findflights.me` (Aviasales). Pour ajouter Go
 
 ### Ajuster les règles métier
 Éditez `CLAUDE.md` pour modifier :
-- Le nombre d'instances parallèles (3-5 par défaut)
-- La flexibilité des dates (±3j ou ±7j)
+- Le nombre d'instances parallèles (2-4 par défaut)
 - Le seuil de préférence pour les vols directs (20% par défaut)
 - Le format de sortie des recommandations
 
@@ -167,22 +197,19 @@ Le projet est pré-configuré avec `findflights.me` (Aviasales). Pour ajouter Go
 
 ## Limites connues
 
-- **Prix indicatifs** — les prix retournés par les API sont des estimations. Le prix final peut varier au moment de la réservation
-- **Pas de booking direct** — Flight Sniper trouve et compare, mais la réservation se fait sur le site de la compagnie ou de l'OTA
-- **Source unique par défaut** — seul findflights.me est pré-configuré. Ajouter une 2e source améliore significativement la couverture
-- **Disponibilité MCP** — si findflights.me est indisponible, les recherches échoueront. L'agent signalera l'erreur
-- **Frais estimés** — la base `airline-fees.md` contient des estimations qui peuvent évoluer. Vérifier sur le site de la compagnie avant de réserver
+- **Prix indicatifs** — les prix via Google Flights sont des estimations en temps réel. Le prix final peut varier au moment de la réservation
+- **Pas de booking direct** — Flight Sniper trouve et compare, la réservation se fait sur le site de la compagnie
+- **Rate limiting** — le serveur MCP a un rate limiter intégré pour éviter le throttling. Les recherches très volumineuses peuvent être ralenties
+- **Couverture** — Google Flights couvre la majorité des routes commerciales mondiales
 
 ---
 
-## Coûts estimés
+## Coûts
 
 | Composant | Coût |
 |-----------|------|
 | Claude Code (Pro) | ~20$/mois |
-| findflights.me MCP | Gratuit |
-| SerpAPI (Google Flights) | 50 recherches gratuites/mois, puis 50$/mois |
-| Amadeus API (test) | Gratuit (rate-limited) |
+| google-flights-mcp-server | Gratuit (aucune clé API) |
 
 ---
 

@@ -1,18 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "mcp__flights-mcp__search_flights",
-      "mcp__flights-mcp__get_flight_options",
-      "mcp__flights-mcp__get_flight_option_details",
-      "mcp__flights-mcp__request_booking_link",
+      "mcp__google-flights__search_flights",
+      "mcp__google-flights__get_date_grid",
+      "mcp__google-flights__find_airport_code",
       "Read",
       "Write"
     ]
   },
   "mcpServers": {
-    "flights-mcp": {
-      "type": "sse",
-      "url": "https://findflights.me/sse"
+    "google-flights": {
+      "command": "npx",
+      "args": ["-y", "google-flights-mcp-server"]
     }
   }
 }
