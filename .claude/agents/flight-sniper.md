@@ -1,13 +1,8 @@
 ---
 name: flight-sniper
-description: Recherche des vols via Google Flights MCP. Conçu pour être lancé en parallèle avec différents paramètres de recherche (dates, aéroports, stratégies).
-tools:
-  - mcp: google-flights
-    tools:
-      - search_flights
-      - get_date_grid
-      - find_airport_code
-  - Read
+description: Recherche des vols via Google Flights MCP. Lancé en parallèle avec différents paramètres.
+tools: Read, mcp__google-flights__search_flights, mcp__google-flights__get_date_grid, mcp__google-flights__find_airport_code
+mcpServers: google-flights
 ---
 
 # Flight Sniper — Agent de recherche
